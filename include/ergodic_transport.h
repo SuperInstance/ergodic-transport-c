@@ -24,7 +24,12 @@ int markov_stationary_distribution(const TransitionMatrix *tm, double pi[ET_MAX_
 /* Mixing time: steps to reach ||P^k(i,.) - pi||_1 < epsilon */
 int markov_mixing_time(const TransitionMatrix *tm, double epsilon, int max_iter);
 
-/* Simulate N steps from state s0. trajectory[i] = state at step i. */
+/* Seed the internal RNG. Call once before simulate if you want a specific seed.
+   If never called, the default seed is 42. Does NOT reset on each simulate call. */
+void markov_seed(unsigned int seed);
+
+/* Simulate N steps from state s0. trajectory[i] = state at step i.
+   Each call produces a different trajectory (RNG state persists across calls). */
 void markov_simulate(const TransitionMatrix *tm, int s0, int N, int trajectory[]);
 
 /* ========== Ergodic Theory ========== */
@@ -65,9 +70,19 @@ double predict_consumption(const double pi[], const BudgetState *bs);
 /* Check if budget covers predicted consumption. Returns margin (positive = safe). */
 double budget_adequacy(const BudgetPlan *plan, const double pi[], const BudgetState *bs);
 
-/* Extra budget needed for non-stationary periods (mixing time * max deviation) */
+/* Extra budget needed for non-stationary periods.
+   Uses: mean_cost + n_sigma * std_cost, where n_sigma = sqrt(mixing_time)
+   to account for concentration during the mixing period.
+   Returns the additional budget beyond the stationary prediction. */
 double budget_safety_margin(const TransitionMatrix *tm, const BudgetState *bs,
                             double epsilon);
+
+/* ========== Ergodicity Checks ========== */
+
+/* Check if a Markov chain is ergodic (irreducible + aperiodic).
+   Returns true if ergodic, false otherwise.
+   Optionally fills reason[256] with a human-readable explanation. */
+bool et_is_ergodic(const TransitionMatrix *tm, char reason[256]);
 
 /* ========== Wasserstein Distance & Control ========== */
 

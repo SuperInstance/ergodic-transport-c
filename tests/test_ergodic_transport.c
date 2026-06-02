@@ -420,6 +420,110 @@ static void test_wasserstein_triangle(void) {
     CHECK(dac <= dab + dbc + TOLERANCE, "triangle inequality should hold");
 }
 
+static void test_simulate_different_trajectories(void) {
+    TransitionMatrix tm;
+    make_symmetric_2state(&tm);
+    int traj1[100], traj2[100];
+    markov_simulate(&tm, 0, 100, traj1);
+    markov_simulate(&tm, 0, 100, traj2);
+    int differ = 0;
+    for (int t = 1; t < 100; t++) /* skip t=0, always = s0 */
+        if (traj1[t] != traj2[t]) differ++;
+    TEST("simulate_different_trajectories");
+    CHECK(differ > 0, "two simulate calls should produce different trajectories");
+}
+
+static void test_markov_seed_reproducible(void) {
+    TransitionMatrix tm;
+    make_symmetric_2state(&tm);
+    int traj1[100], traj2[100];
+    markov_seed(1234);
+    markov_simulate(&tm, 0, 100, traj1);
+    markov_seed(1234);
+    markov_simulate(&tm, 0, 100, traj2);
+    int same = 1;
+    for (int t = 0; t < 100; t++)
+        if (traj1[t] != traj2[t]) same = 0;
+    TEST("markov_seed_reproducible");
+    CHECK(same, "same seed should produce identical trajectories");
+}
+
+static void test_is_ergodic_irreducible(void) {
+    TransitionMatrix tm;
+    make_symmetric_2state(&tm);
+    char reason[256];
+    bool ok = et_is_ergodic(&tm, reason);
+    TEST("is_ergodic_irreducible_aperiodic");
+    CHECK(ok, reason);
+}
+
+static void test_is_ergodic_3state(void) {
+    TransitionMatrix tm;
+    double P[] = {0.5, 0.3, 0.2,
+                  0.1, 0.6, 0.3,
+                  0.2, 0.2, 0.6};
+    markov_init(&tm, 3, P);
+    char reason[256];
+    bool ok = et_is_ergodic(&tm, reason);
+    TEST("is_ergodic_3state");
+    CHECK(ok, reason);
+}
+
+static void test_not_ergodic_reducible(void) {
+    /* State 1 cannot reach state 0 */
+    TransitionMatrix tm;
+    double P[] = {0.5, 0.5,
+                  0.0, 1.0};
+    markov_init(&tm, 2, P);
+    char reason[256];
+    bool ok = et_is_ergodic(&tm, reason);
+    TEST("not_ergodic_reducible");
+    CHECK(!ok, "reducible chain should not be ergodic");
+}
+
+static void test_not_ergodic_periodic(void) {
+    /* Period-2 chain: deterministic flip */
+    TransitionMatrix tm;
+    double P[] = {0.0, 1.0,
+                  1.0, 0.0};
+    markov_init(&tm, 2, P);
+    char reason[256];
+    bool ok = et_is_ergodic(&tm, reason);
+    TEST("not_ergodic_periodic");
+    CHECK(!ok, "period-2 chain should not be ergodic");
+}
+
+static void test_budget_safety_margin_dimensions(void) {
+    /* With uniform costs, std=0, so safety margin should be 0 */
+    TransitionMatrix tm;
+    make_symmetric_2state(&tm);
+    BudgetState bs = {.resources = {10.0, 10.0}, .n = 2};
+    double margin = budget_safety_margin(&tm, &bs, 0.01);
+    TEST("budget_safety_margin_zero_for_uniform_cost");
+    CHECK(fabs(margin) < TOLERANCE, "uniform costs => zero safety margin");
+}
+
+static void test_budget_safety_margin_positive_for_varying_cost(void) {
+    TransitionMatrix tm;
+    make_symmetric_2state(&tm);
+    BudgetState bs = {.resources = {10.0, 30.0}, .n = 2};
+    double margin = budget_safety_margin(&tm, &bs, 0.01);
+    TEST("budget_safety_margin_positive_for_varying_cost");
+    CHECK(margin > 0, "varying costs should give positive safety margin");
+}
+
+static void test_budget_safety_margin_monotonic(void) {
+    /* Higher cost variance should give larger margin */
+    TransitionMatrix tm;
+    make_symmetric_2state(&tm);
+    BudgetState bs_low = {.resources = {10.0, 20.0}, .n = 2};
+    BudgetState bs_high = {.resources = {10.0, 40.0}, .n = 2};
+    double m_low = budget_safety_margin(&tm, &bs_low, 0.01);
+    double m_high = budget_safety_margin(&tm, &bs_high, 0.01);
+    TEST("budget_safety_margin_monotonic_in_variance");
+    CHECK(m_high > m_low, "higher cost variance should give larger margin");
+}
+
 static void test_occupation_converges_to_pi(void) {
     TransitionMatrix tm;
     make_symmetric_2state(&tm);
@@ -502,6 +606,21 @@ int main(void) {
     test_wasserstein_triangle();
     test_occupation_converges_to_pi();
     test_periodic_chain_ergodic();
+
+    printf("\n=== RNG Fix Tests ===\n");
+    test_simulate_different_trajectories();
+    test_markov_seed_reproducible();
+
+    printf("\n=== Ergodicity Check Tests ===\n");
+    test_is_ergodic_irreducible();
+    test_is_ergodic_3state();
+    test_not_ergodic_reducible();
+    test_not_ergodic_periodic();
+
+    printf("\n=== Budget Formula Fix Tests ===\n");
+    test_budget_safety_margin_dimensions();
+    test_budget_safety_margin_positive_for_varying_cost();
+    test_budget_safety_margin_monotonic();
 
     printf("\n========================================\n");
     printf("Passed: %d  Failed: %d  Total: %d\n",
